@@ -66,7 +66,8 @@
 
 <div class="mb-3">
 	<div class="flex justify-between items-center">
-		<div class="flex md:self-center text-lg font-medium px-0.5">
+		<div style="--d: flex; --ff: Cormorant;    --weight: 500;
+--size: 1.2em;">
 			{$i18n.t('Prompts')}
 			<div class="flex self-center w-[1px] h-6 mx-2.5 bg-gray-200 dark:bg-gray-700" />
 			<span class="text-lg font-medium text-gray-500 dark:text-gray-300">{$prompts.length}</span>
@@ -74,7 +75,9 @@
 	</div>
 </div>
 
-<div class=" flex w-full space-x-2">
+<div style="
+    --ai: center;
+    --d: flex;">
 	<div class="flex flex-1">
 		<div class=" self-center ml-1 mr-3">
 			<svg
@@ -118,7 +121,7 @@
 
 <hr class=" border-gray-50 dark:border-gray-850 my-2.5" />
 
-<div class="my-3 mb-5">
+<div class="">
 	{#each $prompts.filter((p) => query === '' || p.command.includes(query)) as prompt}
 		<div
 			class=" flex space-x-4 cursor-pointer w-full px-3 py-2 dark:hover:bg-white/5 hover:bg-black/5 rounded-xl"
@@ -282,13 +285,13 @@
 </div>
 
 <div class=" my-16">
-	<div class=" text-lg font-semibold mb-3 line-clamp-1">
+	<div style="--ff: Cormorant">
 		{$i18n.t('Made by our Community')}
 	</div>
 
 	<a
 		class=" flex space-x-4 cursor-pointer w-full mb-2 px-3 py-2"
-		href="https://openwebui.com/#open-webui-community"
+		href="https://sage.education/#community-prompts"
 		target="_blank"
 	>
 		<div class=" self-center w-10 flex-shrink-0">

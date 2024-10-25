@@ -1,9 +1,53 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [0.3.39] - 2024-10-23
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Changed
+
+- **🎨 UI Refactoring**: improved styling and layout for various components, including Settings, Documents, Interface, SensitiveInput, and Navbar.
+- **🔧 Dockerfile Update**:refactored Dockerfile to update paths and add Docker cleanup commands.
+- **🎨 Font Styles Update**:updated font styles and added Google Fonts preconnect with Cormorant font.
+- **📝 Chat and Message Components Update**:improved message input styling and updated assistant disclaimer.
+- **🔧 Development Environment Update**:updated Dev scripts and package.json for improved user workflow.
+
+## [0.3.38] - 2024-10-22
+
+### Added
+
+- **👀 Password Visibility Toggle**: added password visibility toggle feature for enhanced user experience.
+
+### Changed
+
+- **🔧 Dockerfile Cleanup**: refactored Dockerfile by updating paths and adding Docker cleanup commands.
+- **🎨 Chat and Message Components Update**: updated image paths in Chat and Message components for consistency and aesthetic.
+- **🖇️ Improve Search Functionality**: improved search functionality in Suggestions component for better user experience.
+- **📝 Dev Script Update**: updated dev.sh and package.json scripts for improved user workflow.
+- **📦 Port Mapping Refactor**: refactored Makefile to include additional port mapping for development environment.
+
+### Refactored
+- **🔧 Makefile Cleanup**: simplified and updated Makefile with Docker cleanup commands.
+- **🔧 Docker Cleanup**: removed debug flag from build command in Dockerfile for efficient workflow.
+
+
+## [0.3.37] - 2024-10-21
+
+### Added
+
+- **Markdown Fix**: Resolved an issue where markdown was not rendering correctly, ensuring proper display of formatted text.
+
+## [0.3.36] - 2024-10-20
+
+### Added 
+
+- **🔧 Startr.Styling**: Migrating to admin controlled styles 
+- **🔧 Faster Docker Builds**: Now we can rebuild and release faster allowing for smoother user experience.
+ 
+
+### Added
+
+- **🔧 Enhanced Tools & Functions**: Improved the Tools & Functions feature with better error handling and more robust execution, ensuring a smoother user experience.
+
+### Now with RCLONE support for cloud storage and more! :D
 
 ## [0.3.32] - 2024-10-06
 

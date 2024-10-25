@@ -77,7 +77,7 @@
 
 <div class="w-full max-h-full">
 	<button
-		class="flex space-x-1"
+		style=" --p: 0 0.6em; --d:flex; --br:1em"
 		on:click={() => {
 			history.back();
 		}}
@@ -152,7 +152,7 @@
 
 		<div class="my-2">
 			<div class="flex w-full justify-between">
-				<div class=" self-center text-sm font-semibold">{$i18n.t('Prompt Content')}*</div>
+				<div style="--ff: 'Cormorant', serif; --weight: 700;">{$i18n.t('Prompt Content')}*</div>
 			</div>
 
 			<div class="mt-2">

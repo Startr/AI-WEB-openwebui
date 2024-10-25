@@ -1,6 +1,16 @@
 # Sage : Open WebUI (Formerly Ollama WebUI) 👋
 
-v0.3.33
+v0.3.39 - Check out the new features and improvements in the [CHANGELOG](./CHANGELOG.md)!
+
+v0.3.38 - Now with so much more :D See the [CHANGELOG](./CHANGELOG.md) for more details.
+
+v0.3.37 - Markdown fix
+
+v0.3.36 - Now with cleaner styles and faster Docker Builds :D
+
+v0.3.35 - Now with RCLONE support for cloud storage and more! :D
+
+v0.3.34 - Now with simple multi arch deployment to docker :D
 
 [![GitHub license](https://img.shields.io/github/license/opencoca/AI-WEB-openwebui)](
 

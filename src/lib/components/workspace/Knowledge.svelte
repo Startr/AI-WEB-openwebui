@@ -74,7 +74,8 @@
 
 <div class="mb-3">
 	<div class="flex justify-between items-center">
-		<div class="flex md:self-center text-lg font-medium px-0.5">
+		<div style="--d: flex; --ff: Cormorant;    --weight: 500;
+--size: 1.2em;">
 			{$i18n.t('Knowledge')}
 			<div class="flex self-center w-[1px] h-6 mx-2.5 bg-gray-200 dark:bg-gray-700" />
 			<span class="text-lg font-medium text-gray-500 dark:text-gray-300">{$knowledge.length}</span>
@@ -82,7 +83,9 @@
 	</div>
 </div>
 
-<div class=" flex w-full space-x-2">
+<div style="
+    --ai: center;
+    --d: flex;">
 	<div class="flex flex-1">
 		<div class=" self-center ml-1 mr-3">
 			<svg
@@ -127,9 +130,17 @@
 	</div>
 </div>
 
-<hr class=" border-gray-50 dark:border-gray-850 my-2.5" />
 
-<div class="my-3 mb-5 grid lg:grid-cols-2 xl:grid-cols-3 gap-2">
+<div style="--mb: 1em;
+    --ff: Cormorant;
+    --mt: 0;
+    --size: 0.8em;
+    --c: var(--dark-grey);
+    --ta: right;">
+	ⓘ {$i18n.t("Use '#' in the prompt input to load and include your knowledge.")}
+</div>
+<hr class=" border-gray-50 dark:border-gray-850 my-2.5" />
+<div class=" grid lg:grid-cols-2 xl:grid-cols-3 gap-2">
 	{#each filteredItems as item}
 		<button
 			class=" flex space-x-4 cursor-pointer text-left w-full px-4 py-3 border border-gray-50 dark:border-gray-850 hover:bg-gray-50 dark:hover:bg-gray-850 transition rounded-xl"
@@ -147,7 +158,7 @@
 		>
 			<div class=" w-full">
 				<div class="flex items-center justify-between -mt-1">
-					<div class=" font-semibold line-clamp-1 h-fit">{item.name}</div>
+					<div style="--weight:bold">{item.name}</div>
 
 					<div class=" flex self-center">
 						<ItemMenu
@@ -190,6 +201,4 @@
 	{/each}
 </div>
 
-<div class=" text-gray-500 text-xs mt-1 mb-2">
-	ⓘ {$i18n.t("Use '#' in the prompt input to load and include your knowledge.")}
-</div>
+
