@@ -204,7 +204,7 @@
 	<div class="overflow-y-scroll scrollbar-hidden h-full">
 		{#if PIPELINES_LIST !== null}
 			<div class="flex w-full justify-between mb-2">
-				<div style="--ff: 'Cormorant', serif; --weight: 700;">
+				<div class=" self-center text-sm font-semibold">
 					{$i18n.t('Manage Pipelines')}
 				</div>
 			</div>
@@ -403,7 +403,7 @@
 				{#if pipelines !== null}
 					{#if pipelines.length > 0}
 						<div class="flex w-full justify-between mb-2">
-							<div style="--ff: 'Cormorant', serif; --weight: 700;">
+							<div class=" self-center text-sm font-semibold">
 								{$i18n.t('Pipelines Valves')}
 							</div>
 						</div>
@@ -469,9 +469,9 @@
 														}}
 													>
 														{#if (valves[property] ?? null) === null}
-															<span style="--ff: 'Cormorant', serif; --weight: 400;"> {$i18n.t('None')} </span>
+															<span class="ml-2 self-center"> {$i18n.t('None')} </span>
 														{:else}
-															<span style="--ff: 'Cormorant', serif; --weight: 400;"> {$i18n.t('Custom')} </span>
+															<span class="ml-2 self-center"> {$i18n.t('Custom')} </span>
 														{/if}
 													</button>
 												</div>
@@ -546,12 +546,14 @@
 		{/if}
 	</div>
 
-	<div class="flex justify-end pt-3 text-sm font-medium">
-		<button
-			class=" px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-gray-100 transition rounded-lg"
-			type="submit"
-		>
-			{$i18n.t('Save')}
-		</button>
-	</div>
+	{#if PIPELINES_LIST !== null && PIPELINES_LIST.length > 0}
+		<div class="flex justify-end pt-3 text-sm font-medium">
+			<button
+				class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
+				type="submit"
+			>
+				{$i18n.t('Save')}
+			</button>
+		</div>
+	{/if}
 </form>

@@ -748,9 +748,9 @@
 
 		<div class="flex justify-center items-center flex-1 h-full w-full max-h-full">
 			{#if !camera}
-				<button id="CallOverlayAssistantAvatar"
-					type="button" style="--b: none; --shadow: 0;"
-    
+				<button
+					style="--br:50%;"
+					type="button"
 					on:click={() => {
 						if (assistantSpeaking) {
 							stopAllAudio();
@@ -861,7 +861,7 @@
 			{/if}
 		</div>
 
-		<div class="calloverlay--buttons" style="--d: flex; --fw: wrap; gap: 0.9em; --jc: center;">
+		<div class="flex justify-between items-center pb-2 w-full">
 			<div>
 				{#if camera}
 					<VideoInputMenu
@@ -922,18 +922,16 @@
 				{/if}
 			</div>
 
-			<div style="--o:-1; --w:100%">
+			<div>
 				<button
 					type="button"
-					style="--b:none; --p:0.6em; --shadow:0; --w:100%"
 					on:click={() => {
 						if (assistantSpeaking) {
 							stopAllAudio();
 						}
 					}}
 				>
-					<div id="assistantStatus" 
-					class=" line-clamp-1 text-sm font-medium">
+					<div class=" line-clamp-1 text-sm font-medium">
 						{#if loading}
 							{$i18n.t('Thinking...')}
 						{:else if assistantSpeaking}

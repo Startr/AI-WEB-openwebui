@@ -15,15 +15,20 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, sta
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+
+from open_webui.storage.provider import Storage
+from open_webui.apps.webui.models.knowledge import Knowledges
 from open_webui.apps.retrieval.vector.connector import VECTOR_DB_CLIENT
 
 # Document loaders
 from open_webui.apps.retrieval.loaders.main import Loader
+from open_webui.apps.retrieval.loaders.youtube import YoutubeLoader
 
 # Web search engines
 from open_webui.apps.retrieval.web.main import SearchResult
 from open_webui.apps.retrieval.web.utils import get_web_loader
 from open_webui.apps.retrieval.web.brave import search_brave
+from open_webui.apps.retrieval.web.mojeek import search_mojeek
 from open_webui.apps.retrieval.web.duckduckgo import search_duckduckgo
 from open_webui.apps.retrieval.web.google_pse import search_google_pse
 from open_webui.apps.retrieval.web.jina_search import search_jina
@@ -33,6 +38,7 @@ from open_webui.apps.retrieval.web.serper import search_serper
 from open_webui.apps.retrieval.web.serply import search_serply
 from open_webui.apps.retrieval.web.serpstack import search_serpstack
 from open_webui.apps.retrieval.web.tavily import search_tavily
+from open_webui.apps.retrieval.web.bing import search_bing
 
 
 from open_webui.apps.retrieval.utils import (
@@ -47,6 +53,9 @@ from open_webui.apps.retrieval.utils import (
 from open_webui.apps.webui.models.files import Files
 from open_webui.config import (
     BRAVE_SEARCH_API_KEY,
+    MOJEEK_SEARCH_API_KEY,
+    TIKTOKEN_ENCODING_NAME,
+    RAG_TEXT_SPLITTER,
     CHUNK_OVERLAP,
     CHUNK_SIZE,
     CONTENT_EXTRACTION_ENGINE,
@@ -63,11 +72,13 @@ from open_webui.config import (
     RAG_EMBEDDING_MODEL,
     RAG_EMBEDDING_MODEL_AUTO_UPDATE,
     RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE,
-    RAG_EMBEDDING_OPENAI_BATCH_SIZE,
+    RAG_EMBEDDING_BATCH_SIZE,
     RAG_FILE_MAX_COUNT,
     RAG_FILE_MAX_SIZE,
     RAG_OPENAI_API_BASE_URL,
     RAG_OPENAI_API_KEY,
+    RAG_OLLAMA_BASE_URL,
+    RAG_OLLAMA_API_KEY,
     RAG_RELEVANCE_THRESHOLD,
     RAG_RERANKING_MODEL,
     RAG_RERANKING_MODEL_AUTO_UPDATE,
@@ -79,6 +90,7 @@ from open_webui.config import (
     RAG_WEB_SEARCH_DOMAIN_FILTER_LIST,
     RAG_WEB_SEARCH_ENGINE,
     RAG_WEB_SEARCH_RESULT_COUNT,
+    JINA_API_KEY,
     SEARCHAPI_API_KEY,
     SEARCHAPI_ENGINE,
     SEARXNG_QUERY_URL,
@@ -87,13 +99,21 @@ from open_webui.config import (
     SERPSTACK_API_KEY,
     SERPSTACK_HTTPS,
     TAVILY_API_KEY,
+    BING_SEARCH_V7_ENDPOINT,
+    BING_SEARCH_V7_SUBSCRIPTION_KEY,
     TIKA_SERVER_URL,
     UPLOAD_DIR,
     YOUTUBE_LOADER_LANGUAGE,
+    YOUTUBE_LOADER_PROXY_URL,
+    DEFAULT_LOCALE,
     AppConfig,
 )
 from open_webui.constants import ERROR_MESSAGES
-from open_webui.env import SRC_LOG_LEVELS, DEVICE_TYPE, DOCKER
+from open_webui.env import (
+    SRC_LOG_LEVELS,
+    DEVICE_TYPE,
+    DOCKER,
+)
 from open_webui.utils.misc import (
     calculate_sha256,
     calculate_sha256_string,
@@ -102,17 +122,18 @@ from open_webui.utils.misc import (
 )
 from open_webui.utils.utils import get_admin_user, get_verified_user
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import (
-    YoutubeLoader,
-)
+from langchain.text_splitter import RecursiveCharacterTextSplitter, TokenTextSplitter
 from langchain_core.documents import Document
 
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["RAG"])
 
-app = FastAPI()
+app = FastAPI(
+    docs_url="/docs" if ENV == "dev" else None,
+    openapi_url="/openapi.json" if ENV == "dev" else None,
+    redoc_url=None,
+)
 
 app.state.config = AppConfig()
 
@@ -129,21 +150,28 @@ app.state.config.ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION = (
 app.state.config.CONTENT_EXTRACTION_ENGINE = CONTENT_EXTRACTION_ENGINE
 app.state.config.TIKA_SERVER_URL = TIKA_SERVER_URL
 
+app.state.config.TEXT_SPLITTER = RAG_TEXT_SPLITTER
+app.state.config.TIKTOKEN_ENCODING_NAME = TIKTOKEN_ENCODING_NAME
+
 app.state.config.CHUNK_SIZE = CHUNK_SIZE
 app.state.config.CHUNK_OVERLAP = CHUNK_OVERLAP
 
 app.state.config.RAG_EMBEDDING_ENGINE = RAG_EMBEDDING_ENGINE
 app.state.config.RAG_EMBEDDING_MODEL = RAG_EMBEDDING_MODEL
-app.state.config.RAG_EMBEDDING_OPENAI_BATCH_SIZE = RAG_EMBEDDING_OPENAI_BATCH_SIZE
+app.state.config.RAG_EMBEDDING_BATCH_SIZE = RAG_EMBEDDING_BATCH_SIZE
 app.state.config.RAG_RERANKING_MODEL = RAG_RERANKING_MODEL
 app.state.config.RAG_TEMPLATE = RAG_TEMPLATE
 
 app.state.config.OPENAI_API_BASE_URL = RAG_OPENAI_API_BASE_URL
 app.state.config.OPENAI_API_KEY = RAG_OPENAI_API_KEY
 
+app.state.config.OLLAMA_BASE_URL = RAG_OLLAMA_BASE_URL
+app.state.config.OLLAMA_API_KEY = RAG_OLLAMA_API_KEY
+
 app.state.config.PDF_EXTRACT_IMAGES = PDF_EXTRACT_IMAGES
 
 app.state.config.YOUTUBE_LOADER_LANGUAGE = YOUTUBE_LOADER_LANGUAGE
+app.state.config.YOUTUBE_LOADER_PROXY_URL = YOUTUBE_LOADER_PROXY_URL
 app.state.YOUTUBE_LOADER_TRANSLATION = None
 
 
@@ -155,6 +183,7 @@ app.state.config.SEARXNG_QUERY_URL = SEARXNG_QUERY_URL
 app.state.config.GOOGLE_PSE_API_KEY = GOOGLE_PSE_API_KEY
 app.state.config.GOOGLE_PSE_ENGINE_ID = GOOGLE_PSE_ENGINE_ID
 app.state.config.BRAVE_SEARCH_API_KEY = BRAVE_SEARCH_API_KEY
+app.state.config.MOJEEK_SEARCH_API_KEY = MOJEEK_SEARCH_API_KEY
 app.state.config.SERPSTACK_API_KEY = SERPSTACK_API_KEY
 app.state.config.SERPSTACK_HTTPS = SERPSTACK_HTTPS
 app.state.config.SERPER_API_KEY = SERPER_API_KEY
@@ -162,6 +191,10 @@ app.state.config.SERPLY_API_KEY = SERPLY_API_KEY
 app.state.config.TAVILY_API_KEY = TAVILY_API_KEY
 app.state.config.SEARCHAPI_API_KEY = SEARCHAPI_API_KEY
 app.state.config.SEARCHAPI_ENGINE = SEARCHAPI_ENGINE
+app.state.config.JINA_API_KEY = JINA_API_KEY
+app.state.config.BING_SEARCH_V7_ENDPOINT = BING_SEARCH_V7_ENDPOINT
+app.state.config.BING_SEARCH_V7_SUBSCRIPTION_KEY = BING_SEARCH_V7_SUBSCRIPTION_KEY
+
 app.state.config.RAG_WEB_SEARCH_RESULT_COUNT = RAG_WEB_SEARCH_RESULT_COUNT
 app.state.config.RAG_WEB_SEARCH_CONCURRENT_REQUESTS = RAG_WEB_SEARCH_CONCURRENT_REQUESTS
 
@@ -171,13 +204,17 @@ def update_embedding_model(
     auto_update: bool = False,
 ):
     if embedding_model and app.state.config.RAG_EMBEDDING_ENGINE == "":
-        import sentence_transformers
+        from sentence_transformers import SentenceTransformer
 
-        app.state.sentence_transformer_ef = sentence_transformers.SentenceTransformer(
-            get_model_path(embedding_model, auto_update),
-            device=DEVICE_TYPE,
-            trust_remote_code=RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE,
-        )
+        try:
+            app.state.sentence_transformer_ef = SentenceTransformer(
+                get_model_path(embedding_model, auto_update),
+                device=DEVICE_TYPE,
+                trust_remote_code=RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE,
+            )
+        except Exception as e:
+            log.debug(f"Error loading SentenceTransformer: {e}")
+            app.state.sentence_transformer_ef = None
     else:
         app.state.sentence_transformer_ef = None
 
@@ -231,9 +268,17 @@ app.state.EMBEDDING_FUNCTION = get_embedding_function(
     app.state.config.RAG_EMBEDDING_ENGINE,
     app.state.config.RAG_EMBEDDING_MODEL,
     app.state.sentence_transformer_ef,
-    app.state.config.OPENAI_API_KEY,
-    app.state.config.OPENAI_API_BASE_URL,
-    app.state.config.RAG_EMBEDDING_OPENAI_BATCH_SIZE,
+    (
+        app.state.config.OPENAI_API_BASE_URL
+        if app.state.config.RAG_EMBEDDING_ENGINE == "openai"
+        else app.state.config.OLLAMA_BASE_URL
+    ),
+    (
+        app.state.config.OPENAI_API_KEY
+        if app.state.config.RAG_EMBEDDING_ENGINE == "openai"
+        else app.state.config.OLLAMA_API_KEY
+    ),
+    app.state.config.RAG_EMBEDDING_BATCH_SIZE,
 )
 
 app.add_middleware(
@@ -267,7 +312,7 @@ async def get_status():
         "embedding_engine": app.state.config.RAG_EMBEDDING_ENGINE,
         "embedding_model": app.state.config.RAG_EMBEDDING_MODEL,
         "reranking_model": app.state.config.RAG_RERANKING_MODEL,
-        "openai_batch_size": app.state.config.RAG_EMBEDDING_OPENAI_BATCH_SIZE,
+        "embedding_batch_size": app.state.config.RAG_EMBEDDING_BATCH_SIZE,
     }
 
 
@@ -277,10 +322,14 @@ async def get_embedding_config(user=Depends(get_admin_user)):
         "status": True,
         "embedding_engine": app.state.config.RAG_EMBEDDING_ENGINE,
         "embedding_model": app.state.config.RAG_EMBEDDING_MODEL,
+        "embedding_batch_size": app.state.config.RAG_EMBEDDING_BATCH_SIZE,
         "openai_config": {
             "url": app.state.config.OPENAI_API_BASE_URL,
             "key": app.state.config.OPENAI_API_KEY,
-            "batch_size": app.state.config.RAG_EMBEDDING_OPENAI_BATCH_SIZE,
+        },
+        "ollama_config": {
+            "url": app.state.config.OLLAMA_BASE_URL,
+            "key": app.state.config.OLLAMA_API_KEY,
         },
     }
 
@@ -296,13 +345,19 @@ async def get_reraanking_config(user=Depends(get_admin_user)):
 class OpenAIConfigForm(BaseModel):
     url: str
     key: str
-    batch_size: Optional[int] = None
+
+
+class OllamaConfigForm(BaseModel):
+    url: str
+    key: str
 
 
 class EmbeddingModelUpdateForm(BaseModel):
     openai_config: Optional[OpenAIConfigForm] = None
+    ollama_config: Optional[OllamaConfigForm] = None
     embedding_engine: str
     embedding_model: str
+    embedding_batch_size: Optional[int] = 1
 
 
 @app.post("/embedding/update")
@@ -320,11 +375,12 @@ async def update_embedding_config(
             if form_data.openai_config is not None:
                 app.state.config.OPENAI_API_BASE_URL = form_data.openai_config.url
                 app.state.config.OPENAI_API_KEY = form_data.openai_config.key
-                app.state.config.RAG_EMBEDDING_OPENAI_BATCH_SIZE = (
-                    form_data.openai_config.batch_size
-                    if form_data.openai_config.batch_size
-                    else 1
-                )
+
+            if form_data.ollama_config is not None:
+                app.state.config.OLLAMA_BASE_URL = form_data.ollama_config.url
+                app.state.config.OLLAMA_API_KEY = form_data.ollama_config.key
+
+            app.state.config.RAG_EMBEDDING_BATCH_SIZE = form_data.embedding_batch_size
 
         update_embedding_model(app.state.config.RAG_EMBEDDING_MODEL)
 
@@ -332,19 +388,31 @@ async def update_embedding_config(
             app.state.config.RAG_EMBEDDING_ENGINE,
             app.state.config.RAG_EMBEDDING_MODEL,
             app.state.sentence_transformer_ef,
-            app.state.config.OPENAI_API_KEY,
-            app.state.config.OPENAI_API_BASE_URL,
-            app.state.config.RAG_EMBEDDING_OPENAI_BATCH_SIZE,
+            (
+                app.state.config.OPENAI_API_BASE_URL
+                if app.state.config.RAG_EMBEDDING_ENGINE == "openai"
+                else app.state.config.OLLAMA_BASE_URL
+            ),
+            (
+                app.state.config.OPENAI_API_KEY
+                if app.state.config.RAG_EMBEDDING_ENGINE == "openai"
+                else app.state.config.OLLAMA_API_KEY
+            ),
+            app.state.config.RAG_EMBEDDING_BATCH_SIZE,
         )
 
         return {
             "status": True,
             "embedding_engine": app.state.config.RAG_EMBEDDING_ENGINE,
             "embedding_model": app.state.config.RAG_EMBEDDING_MODEL,
+            "embedding_batch_size": app.state.config.RAG_EMBEDDING_BATCH_SIZE,
             "openai_config": {
                 "url": app.state.config.OPENAI_API_BASE_URL,
                 "key": app.state.config.OPENAI_API_KEY,
-                "batch_size": app.state.config.RAG_EMBEDDING_OPENAI_BATCH_SIZE,
+            },
+            "ollama_config": {
+                "url": app.state.config.OLLAMA_BASE_URL,
+                "key": app.state.config.OLLAMA_API_KEY,
             },
         }
     except Exception as e:
@@ -388,24 +456,26 @@ async def get_rag_config(user=Depends(get_admin_user)):
     return {
         "status": True,
         "pdf_extract_images": app.state.config.PDF_EXTRACT_IMAGES,
-        "file": {
-            "max_size": app.state.config.FILE_MAX_SIZE,
-            "max_count": app.state.config.FILE_MAX_COUNT,
-        },
         "content_extraction": {
             "engine": app.state.config.CONTENT_EXTRACTION_ENGINE,
             "tika_server_url": app.state.config.TIKA_SERVER_URL,
         },
         "chunk": {
+            "text_splitter": app.state.config.TEXT_SPLITTER,
             "chunk_size": app.state.config.CHUNK_SIZE,
             "chunk_overlap": app.state.config.CHUNK_OVERLAP,
+        },
+        "file": {
+            "max_size": app.state.config.FILE_MAX_SIZE,
+            "max_count": app.state.config.FILE_MAX_COUNT,
         },
         "youtube": {
             "language": app.state.config.YOUTUBE_LOADER_LANGUAGE,
             "translation": app.state.YOUTUBE_LOADER_TRANSLATION,
+            "proxy_url": app.state.config.YOUTUBE_LOADER_PROXY_URL,
         },
         "web": {
-            "ssl_verification": app.state.config.ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION,
+            "web_loader_ssl_verification": app.state.config.ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION,
             "search": {
                 "enabled": app.state.config.ENABLE_RAG_WEB_SEARCH,
                 "engine": app.state.config.RAG_WEB_SEARCH_ENGINE,
@@ -413,6 +483,7 @@ async def get_rag_config(user=Depends(get_admin_user)):
                 "google_pse_api_key": app.state.config.GOOGLE_PSE_API_KEY,
                 "google_pse_engine_id": app.state.config.GOOGLE_PSE_ENGINE_ID,
                 "brave_search_api_key": app.state.config.BRAVE_SEARCH_API_KEY,
+                "mojeek_search_api_key": app.state.config.MOJEEK_SEARCH_API_KEY,
                 "serpstack_api_key": app.state.config.SERPSTACK_API_KEY,
                 "serpstack_https": app.state.config.SERPSTACK_HTTPS,
                 "serper_api_key": app.state.config.SERPER_API_KEY,
@@ -420,6 +491,9 @@ async def get_rag_config(user=Depends(get_admin_user)):
                 "tavily_api_key": app.state.config.TAVILY_API_KEY,
                 "searchapi_api_key": app.state.config.SEARCHAPI_API_KEY,
                 "seaarchapi_engine": app.state.config.SEARCHAPI_ENGINE,
+                "jina_api_key": app.state.config.JINA_API_KEY,
+                "bing_search_v7_endpoint": app.state.config.BING_SEARCH_V7_ENDPOINT,
+                "bing_search_v7_subscription_key": app.state.config.BING_SEARCH_V7_SUBSCRIPTION_KEY,
                 "result_count": app.state.config.RAG_WEB_SEARCH_RESULT_COUNT,
                 "concurrent_requests": app.state.config.RAG_WEB_SEARCH_CONCURRENT_REQUESTS,
             },
@@ -438,6 +512,7 @@ class ContentExtractionConfig(BaseModel):
 
 
 class ChunkParamUpdateForm(BaseModel):
+    text_splitter: Optional[str] = None
     chunk_size: int
     chunk_overlap: int
 
@@ -445,6 +520,7 @@ class ChunkParamUpdateForm(BaseModel):
 class YoutubeLoaderConfig(BaseModel):
     language: list[str]
     translation: Optional[str] = None
+    proxy_url: str = ""
 
 
 class WebSearchConfig(BaseModel):
@@ -454,6 +530,7 @@ class WebSearchConfig(BaseModel):
     google_pse_api_key: Optional[str] = None
     google_pse_engine_id: Optional[str] = None
     brave_search_api_key: Optional[str] = None
+    mojeek_search_api_key: Optional[str] = None
     serpstack_api_key: Optional[str] = None
     serpstack_https: Optional[bool] = None
     serper_api_key: Optional[str] = None
@@ -461,6 +538,9 @@ class WebSearchConfig(BaseModel):
     tavily_api_key: Optional[str] = None
     searchapi_api_key: Optional[str] = None
     searchapi_engine: Optional[str] = None
+    jina_api_key: Optional[str] = None
+    bing_search_v7_endpoint: Optional[str] = None
+    bing_search_v7_subscription_key: Optional[str] = None
     result_count: Optional[int] = None
     concurrent_requests: Optional[int] = None
 
@@ -497,15 +577,18 @@ async def update_rag_config(form_data: ConfigUpdateForm, user=Depends(get_admin_
         app.state.config.TIKA_SERVER_URL = form_data.content_extraction.tika_server_url
 
     if form_data.chunk is not None:
+        app.state.config.TEXT_SPLITTER = form_data.chunk.text_splitter
         app.state.config.CHUNK_SIZE = form_data.chunk.chunk_size
         app.state.config.CHUNK_OVERLAP = form_data.chunk.chunk_overlap
 
     if form_data.youtube is not None:
         app.state.config.YOUTUBE_LOADER_LANGUAGE = form_data.youtube.language
+        app.state.config.YOUTUBE_LOADER_PROXY_URL = form_data.youtube.proxy_url
         app.state.YOUTUBE_LOADER_TRANSLATION = form_data.youtube.translation
 
     if form_data.web is not None:
         app.state.config.ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION = (
+            # Note: When UI "Bypass SSL verification for Websites"=True then ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION=False
             form_data.web.web_loader_ssl_verification
         )
 
@@ -519,6 +602,9 @@ async def update_rag_config(form_data: ConfigUpdateForm, user=Depends(get_admin_
         app.state.config.BRAVE_SEARCH_API_KEY = (
             form_data.web.search.brave_search_api_key
         )
+        app.state.config.MOJEEK_SEARCH_API_KEY = (
+            form_data.web.search.mojeek_search_api_key
+        )
         app.state.config.SERPSTACK_API_KEY = form_data.web.search.serpstack_api_key
         app.state.config.SERPSTACK_HTTPS = form_data.web.search.serpstack_https
         app.state.config.SERPER_API_KEY = form_data.web.search.serper_api_key
@@ -526,6 +612,15 @@ async def update_rag_config(form_data: ConfigUpdateForm, user=Depends(get_admin_
         app.state.config.TAVILY_API_KEY = form_data.web.search.tavily_api_key
         app.state.config.SEARCHAPI_API_KEY = form_data.web.search.searchapi_api_key
         app.state.config.SEARCHAPI_ENGINE = form_data.web.search.searchapi_engine
+
+        app.state.config.JINA_API_KEY = form_data.web.search.jina_api_key
+        app.state.config.BING_SEARCH_V7_ENDPOINT = (
+            form_data.web.search.bing_search_v7_endpoint
+        )
+        app.state.config.BING_SEARCH_V7_SUBSCRIPTION_KEY = (
+            form_data.web.search.bing_search_v7_subscription_key
+        )
+
         app.state.config.RAG_WEB_SEARCH_RESULT_COUNT = form_data.web.search.result_count
         app.state.config.RAG_WEB_SEARCH_CONCURRENT_REQUESTS = (
             form_data.web.search.concurrent_requests
@@ -543,15 +638,17 @@ async def update_rag_config(form_data: ConfigUpdateForm, user=Depends(get_admin_
             "tika_server_url": app.state.config.TIKA_SERVER_URL,
         },
         "chunk": {
+            "text_splitter": app.state.config.TEXT_SPLITTER,
             "chunk_size": app.state.config.CHUNK_SIZE,
             "chunk_overlap": app.state.config.CHUNK_OVERLAP,
         },
         "youtube": {
             "language": app.state.config.YOUTUBE_LOADER_LANGUAGE,
+            "proxy_url": app.state.config.YOUTUBE_LOADER_PROXY_URL,
             "translation": app.state.YOUTUBE_LOADER_TRANSLATION,
         },
         "web": {
-            "ssl_verification": app.state.config.ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION,
+            "web_loader_ssl_verification": app.state.config.ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION,
             "search": {
                 "enabled": app.state.config.ENABLE_RAG_WEB_SEARCH,
                 "engine": app.state.config.RAG_WEB_SEARCH_ENGINE,
@@ -559,6 +656,7 @@ async def update_rag_config(form_data: ConfigUpdateForm, user=Depends(get_admin_
                 "google_pse_api_key": app.state.config.GOOGLE_PSE_API_KEY,
                 "google_pse_engine_id": app.state.config.GOOGLE_PSE_ENGINE_ID,
                 "brave_search_api_key": app.state.config.BRAVE_SEARCH_API_KEY,
+                "mojeek_search_api_key": app.state.config.MOJEEK_SEARCH_API_KEY,
                 "serpstack_api_key": app.state.config.SERPSTACK_API_KEY,
                 "serpstack_https": app.state.config.SERPSTACK_HTTPS,
                 "serper_api_key": app.state.config.SERPER_API_KEY,
@@ -566,6 +664,9 @@ async def update_rag_config(form_data: ConfigUpdateForm, user=Depends(get_admin_
                 "serachapi_api_key": app.state.config.SEARCHAPI_API_KEY,
                 "searchapi_engine": app.state.config.SEARCHAPI_ENGINE,
                 "tavily_api_key": app.state.config.TAVILY_API_KEY,
+                "jina_api_key": app.state.config.JINA_API_KEY,
+                "bing_search_v7_endpoint": app.state.config.BING_SEARCH_V7_ENDPOINT,
+                "bing_search_v7_subscription_key": app.state.config.BING_SEARCH_V7_SUBSCRIPTION_KEY,
                 "result_count": app.state.config.RAG_WEB_SEARCH_RESULT_COUNT,
                 "concurrent_requests": app.state.config.RAG_WEB_SEARCH_CONCURRENT_REQUESTS,
             },
@@ -603,11 +704,10 @@ class QuerySettingsForm(BaseModel):
 async def update_query_settings(
     form_data: QuerySettingsForm, user=Depends(get_admin_user)
 ):
-    app.state.config.RAG_TEMPLATE = (
-        form_data.template if form_data.template != "" else DEFAULT_RAG_TEMPLATE
-    )
+    app.state.config.RAG_TEMPLATE = form_data.template
     app.state.config.TOP_K = form_data.k if form_data.k else 4
     app.state.config.RELEVANCE_THRESHOLD = form_data.r if form_data.r else 0.0
+
     app.state.config.ENABLE_RAG_HYBRID_SEARCH = (
         form_data.hybrid if form_data.hybrid else False
     )
@@ -628,6 +728,23 @@ async def update_query_settings(
 ####################################
 
 
+def _get_docs_info(docs: list[Document]) -> str:
+    docs_info = set()
+
+    # Trying to select relevant metadata identifying the document.
+    for doc in docs:
+        metadata = getattr(doc, "metadata", {})
+        doc_name = metadata.get("name", "")
+        if not doc_name:
+            doc_name = metadata.get("title", "")
+        if not doc_name:
+            doc_name = metadata.get("source", "")
+        if doc_name:
+            docs_info.add(doc_name)
+
+    return ", ".join(docs_info)
+
+
 def save_docs_to_vector_db(
     docs,
     collection_name,
@@ -636,7 +753,9 @@ def save_docs_to_vector_db(
     split: bool = True,
     add: bool = False,
 ) -> bool:
-    log.info(f"save_docs_to_vector_db {docs} {collection_name}")
+    log.info(
+        f"save_docs_to_vector_db: document {_get_docs_info(docs)} {collection_name}"
+    )
 
     # Check if entries with the same hash (metadata.hash) already exist
     if metadata and "hash" in metadata:
@@ -645,25 +764,48 @@ def save_docs_to_vector_db(
             filter={"hash": metadata["hash"]},
         )
 
-        if result:
+        if result is not None:
             existing_doc_ids = result.ids[0]
             if existing_doc_ids:
                 log.info(f"Document with hash {metadata['hash']} already exists")
                 raise ValueError(ERROR_MESSAGES.DUPLICATE_CONTENT)
 
     if split:
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=app.state.config.CHUNK_SIZE,
-            chunk_overlap=app.state.config.CHUNK_OVERLAP,
-            add_start_index=True,
-        )
+        if app.state.config.TEXT_SPLITTER in ["", "character"]:
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=app.state.config.CHUNK_SIZE,
+                chunk_overlap=app.state.config.CHUNK_OVERLAP,
+                add_start_index=True,
+            )
+        elif app.state.config.TEXT_SPLITTER == "token":
+            text_splitter = TokenTextSplitter(
+                encoding_name=app.state.config.TIKTOKEN_ENCODING_NAME,
+                chunk_size=app.state.config.CHUNK_SIZE,
+                chunk_overlap=app.state.config.CHUNK_OVERLAP,
+                add_start_index=True,
+            )
+        else:
+            raise ValueError(ERROR_MESSAGES.DEFAULT("Invalid text splitter"))
+
         docs = text_splitter.split_documents(docs)
 
     if len(docs) == 0:
         raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)
 
     texts = [doc.page_content for doc in docs]
-    metadatas = [{**doc.metadata, **(metadata if metadata else {})} for doc in docs]
+    metadatas = [
+        {
+            **doc.metadata,
+            **(metadata if metadata else {}),
+            "embedding_config": json.dumps(
+                {
+                    "engine": app.state.config.RAG_EMBEDDING_ENGINE,
+                    "model": app.state.config.RAG_EMBEDDING_MODEL,
+                }
+            ),
+        }
+        for doc in docs
+    ]
 
     # ChromaDB does not like datetime formats
     # for meta-data so convert them to string.
@@ -679,8 +821,10 @@ def save_docs_to_vector_db(
             if overwrite:
                 VECTOR_DB_CLIENT.delete_collection(collection_name=collection_name)
                 log.info(f"deleting existing collection {collection_name}")
-
-            if add is False:
+            elif add is False:
+                log.info(
+                    f"collection {collection_name} already exists, overwrite is False and add is False"
+                )
                 return True
 
         log.info(f"adding to collection {collection_name}")
@@ -688,9 +832,17 @@ def save_docs_to_vector_db(
             app.state.config.RAG_EMBEDDING_ENGINE,
             app.state.config.RAG_EMBEDDING_MODEL,
             app.state.sentence_transformer_ef,
-            app.state.config.OPENAI_API_KEY,
-            app.state.config.OPENAI_API_BASE_URL,
-            app.state.config.RAG_EMBEDDING_OPENAI_BATCH_SIZE,
+            (
+                app.state.config.OPENAI_API_BASE_URL
+                if app.state.config.RAG_EMBEDDING_ENGINE == "openai"
+                else app.state.config.OLLAMA_BASE_URL
+            ),
+            (
+                app.state.config.OPENAI_API_KEY
+                if app.state.config.RAG_EMBEDDING_ENGINE == "openai"
+                else app.state.config.OLLAMA_API_KEY
+            ),
+            app.state.config.RAG_EMBEDDING_BATCH_SIZE,
         )
 
         embeddings = embedding_function(
@@ -715,7 +867,7 @@ def save_docs_to_vector_db(
         return True
     except Exception as e:
         log.exception(e)
-        return False
+        raise e
 
 
 class ProcessFileForm(BaseModel):
@@ -741,19 +893,17 @@ def process_file(
             # Update the content in the file
             # Usage: /files/{file_id}/data/content/update
 
-            VECTOR_DB_CLIENT.delete(
-                collection_name=f"file-{file.id}",
-                filter={"file_id": file.id},
-            )
+            VECTOR_DB_CLIENT.delete_collection(collection_name=f"file-{file.id}")
 
             docs = [
                 Document(
-                    page_content=form_data.content,
+                    page_content=form_data.content.replace("<br/>", "\n"),
                     metadata={
-                        "name": file.meta.get("name", file.filename),
+                        **file.meta,
+                        "name": file.filename,
                         "created_by": file.user_id,
                         "file_id": file.id,
-                        **file.meta,
+                        "source": file.filename,
                     },
                 )
             ]
@@ -767,7 +917,7 @@ def process_file(
                 collection_name=f"file-{file.id}", filter={"file_id": file.id}
             )
 
-            if len(result.ids[0]) > 0:
+            if result is not None and len(result.ids[0]) > 0:
                 docs = [
                     Document(
                         page_content=result.documents[0][idx],
@@ -780,10 +930,11 @@ def process_file(
                     Document(
                         page_content=file.data.get("content", ""),
                         metadata={
-                            "name": file.meta.get("name", file.filename),
+                            **file.meta,
+                            "name": file.filename,
                             "created_by": file.user_id,
                             "file_id": file.id,
-                            **file.meta,
+                            "source": file.filename,
                         },
                     )
                 ]
@@ -792,31 +943,44 @@ def process_file(
         else:
             # Process the file and save the content
             # Usage: /files/
-
-            file_path = file.meta.get("path", None)
+            file_path = file.path
             if file_path:
+                file_path = Storage.get_file(file_path)
                 loader = Loader(
                     engine=app.state.config.CONTENT_EXTRACTION_ENGINE,
                     TIKA_SERVER_URL=app.state.config.TIKA_SERVER_URL,
                     PDF_EXTRACT_IMAGES=app.state.config.PDF_EXTRACT_IMAGES,
                 )
-
                 docs = loader.load(
                     file.filename, file.meta.get("content_type"), file_path
                 )
+
+                docs = [
+                    Document(
+                        page_content=doc.page_content,
+                        metadata={
+                            **doc.metadata,
+                            "name": file.filename,
+                            "created_by": file.user_id,
+                            "file_id": file.id,
+                            "source": file.filename,
+                        },
+                    )
+                    for doc in docs
+                ]
             else:
                 docs = [
                     Document(
                         page_content=file.data.get("content", ""),
                         metadata={
+                            **file.meta,
                             "name": file.filename,
                             "created_by": file.user_id,
                             "file_id": file.id,
-                            **file.meta,
+                            "source": file.filename,
                         },
                     )
                 ]
-
             text_content = " ".join([doc.page_content for doc in docs])
 
         log.debug(f"text_content: {text_content}")
@@ -834,7 +998,7 @@ def process_file(
                 collection_name=collection_name,
                 metadata={
                     "file_id": file.id,
-                    "name": file.meta.get("name", file.filename),
+                    "name": file.filename,
                     "hash": hash,
                 },
                 add=(True if form_data.collection_name else False),
@@ -851,7 +1015,7 @@ def process_file(
                 return {
                     "status": True,
                     "collection_name": collection_name,
-                    "filename": file.meta.get("name", file.filename),
+                    "filename": file.filename,
                     "content": text_content,
                 }
         except Exception as e:
@@ -916,12 +1080,12 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
         if not collection_name:
             collection_name = calculate_sha256_string(form_data.url)[:63]
 
-        loader = YoutubeLoader.from_youtube_url(
+        loader = YoutubeLoader(
             form_data.url,
-            add_video_info=True,
             language=app.state.config.YOUTUBE_LOADER_LANGUAGE,
-            translation=app.state.YOUTUBE_LOADER_TRANSLATION,
+            proxy_url=app.state.config.YOUTUBE_LOADER_PROXY_URL,
         )
+
         docs = loader.load()
         content = " ".join([doc.page_content for doc in docs])
         log.debug(f"text_content: {content}")
@@ -992,6 +1156,7 @@ def search_web(engine: str, query: str) -> list[SearchResult]:
     - SEARXNG_QUERY_URL
     - GOOGLE_PSE_API_KEY + GOOGLE_PSE_ENGINE_ID
     - BRAVE_SEARCH_API_KEY
+    - MOJEEK_SEARCH_API_KEY
     - SERPSTACK_API_KEY
     - SERPER_API_KEY
     - SERPLY_API_KEY
@@ -1038,6 +1203,16 @@ def search_web(engine: str, query: str) -> list[SearchResult]:
             )
         else:
             raise Exception("No BRAVE_SEARCH_API_KEY found in environment variables")
+    elif engine == "mojeek":
+        if app.state.config.MOJEEK_SEARCH_API_KEY:
+            return search_mojeek(
+                app.state.config.MOJEEK_SEARCH_API_KEY,
+                query,
+                app.state.config.RAG_WEB_SEARCH_RESULT_COUNT,
+                app.state.config.RAG_WEB_SEARCH_DOMAIN_FILTER_LIST,
+            )
+        else:
+            raise Exception("No MOJEEK_SEARCH_API_KEY found in environment variables")
     elif engine == "serpstack":
         if app.state.config.SERPSTACK_API_KEY:
             return search_serpstack(
@@ -1096,7 +1271,20 @@ def search_web(engine: str, query: str) -> list[SearchResult]:
         else:
             raise Exception("No SEARCHAPI_API_KEY found in environment variables")
     elif engine == "jina":
-        return search_jina(query, app.state.config.RAG_WEB_SEARCH_RESULT_COUNT)
+        return search_jina(
+            app.state.config.JINA_API_KEY,
+            query,
+            app.state.config.RAG_WEB_SEARCH_RESULT_COUNT,
+        )
+    elif engine == "bing":
+        return search_bing(
+            app.state.config.BING_SEARCH_V7_SUBSCRIPTION_KEY,
+            app.state.config.BING_SEARCH_V7_ENDPOINT,
+            str(DEFAULT_LOCALE),
+            query,
+            app.state.config.RAG_WEB_SEARCH_RESULT_COUNT,
+            app.state.config.RAG_WEB_SEARCH_DOMAIN_FILTER_LIST,
+        )
     else:
         raise Exception("No search engine API key found in environment variables")
 
@@ -1126,8 +1314,12 @@ def process_web_search(form_data: SearchForm, user=Depends(get_verified_user)):
 
         urls = [result.link for result in web_results]
 
-        loader = get_web_loader(urls)
-        docs = loader.load()
+        loader = get_web_loader(
+            urls,
+            verify_ssl=app.state.config.ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION,
+            requests_per_second=app.state.config.RAG_WEB_SEARCH_CONCURRENT_REQUESTS,
+        )
+        docs = loader.aload()
 
         save_docs_to_vector_db(docs, collection_name, overwrite=True)
 
@@ -1201,7 +1393,7 @@ def query_collection_handler(
         if app.state.config.ENABLE_RAG_HYBRID_SEARCH:
             return query_collection_with_hybrid_search(
                 collection_names=form_data.collection_names,
-                query=form_data.query,
+                queries=[form_data.query],
                 embedding_function=app.state.EMBEDDING_FUNCTION,
                 k=form_data.k if form_data.k else app.state.config.TOP_K,
                 reranking_function=app.state.sentence_transformer_rf,
@@ -1212,7 +1404,7 @@ def query_collection_handler(
         else:
             return query_collection(
                 collection_names=form_data.collection_names,
-                query=form_data.query,
+                queries=[form_data.query],
                 embedding_function=app.state.EMBEDDING_FUNCTION,
                 k=form_data.k if form_data.k else app.state.config.TOP_K,
             )
@@ -1259,6 +1451,7 @@ def delete_entries_from_collection(form_data: DeleteForm, user=Depends(get_admin
 @app.post("/reset/db")
 def reset_vector_db(user=Depends(get_admin_user)):
     VECTOR_DB_CLIENT.reset()
+    Knowledges.delete_all_knowledge()
 
 
 @app.post("/reset/uploads")
@@ -1281,28 +1474,6 @@ def reset_upload_dir(user=Depends(get_admin_user)) -> bool:
             print(f"The directory {folder} does not exist")
     except Exception as e:
         print(f"Failed to process the directory {folder}. Reason: {e}")
-
-    return True
-
-
-@app.post("/reset")
-def reset(user=Depends(get_admin_user)) -> bool:
-    folder = f"{UPLOAD_DIR}"
-    for filename in os.listdir(folder):
-        file_path = os.path.join(folder, filename)
-        try:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)
-            elif os.path.isdir(file_path):
-                shutil.rmtree(file_path)
-        except Exception as e:
-            log.error("Failed to delete %s. Reason: %s" % (file_path, e))
-
-    try:
-        VECTOR_DB_CLIENT.reset()
-    except Exception as e:
-        log.exception(e)
-
     return True
 
 
